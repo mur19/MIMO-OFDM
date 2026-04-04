@@ -197,10 +197,10 @@ class QAMmodulation:
                 
                 Y_vec = np.array([Y[i, j, 0], Y[i, j, 1]])
                 
-                H_H = H_mat.conj().T  # Эрмитово сопряжение
+                H_H = H_mat.conj().T  # эрмитово сопряжение
                 G = H_H @ H_mat + np.eye(2)/self.SNR
                 
-                # Решаем систему G * X_mmse = H_H * Y_vec
+                # решаем систему G * X_mmse = H_H * Y_vec
                 X_vec = np.linalg.solve(G, H_H @ Y_vec)
                 
                 y_mmse[i, j, 0] = X_vec[0]
@@ -252,19 +252,14 @@ class QAMmodulation:
         H_mat[:, :, 1, 0] = H[1::2, :, 0]
         H_mat[:, :, 1, 1] = H[1::2, :, 1]
 
-        # H*X для всех кандидатов
-        HX = np.einsum('ijab,kb->ijak', H_mat, X)
+        HX = np.einsum('ijab,kb->ijak', H_mat, X) # H*X для всех кандидатов
 
-        # разность
         diff = Y[:, :, :, None] - HX
 
-        # ML метрика
         metric = np.sum(np.abs(diff)**2, axis=2)
 
-        # индекс лучшего кандидата
         idx = np.argmin(metric, axis=2)
 
-        # восстановление символов
         y_ml = X[idx]
 
         return y_ml
@@ -564,17 +559,15 @@ class QAMmodulation:
         Y_OFDM = Y_OFDM_pilots[indices_to_keep, :, :]
 
 
-        # вычисление матрицы H
+        
         H = np.zeros_like(H_sum)
 
         even_idx = np.arange(0, 2*self.OFDM_symbols, 2)
         odd_idx = np.arange(1, 2*self.OFDM_symbols, 2)
 
-        # Четные строки используют глубину 0 из H_sum
         H[even_idx, :, 0] = 2 * H_sum[even_idx, :, 0] - H_sum[odd_idx, :, 0]
         H[even_idx, :, 1] = -H_sum[even_idx, :, 0] + H_sum[odd_idx, :, 0]
 
-        # Нечетные строки используют глубину 1 из H_sum
         H[odd_idx, :, 0] = 2 * H_sum[even_idx, :, 1] - H_sum[odd_idx, :, 1]
         H[odd_idx, :, 1] = -H_sum[even_idx, :, 1] + H_sum[odd_idx, :, 1]
 
@@ -623,8 +616,6 @@ pass
 
 # for i in range(len(constellation)):
 #     symbol = constellation[i]
-#     # Демодулируем символ 'hard' методом, чтобы получить биты
-#     # Мы передаем символ как массив, метод возвращает массив битов
 #     bits = qam.modem.demodulate(np.array([symbol]), 'hard')
     
 #     bits_gray.append(bits)
