@@ -294,12 +294,12 @@ plt.tight_layout()
 plt.show()
 
 
-SNR_dB_set = np.arange(-5, 35, 1)
+SNR_dB_set = np.arange(0, 30, 2)
 
 ber_zf, evm_zf = [], []
 ber_mmse, evm_mmse = [], []
 
-N_avg = 1
+N_avg = 100
 
 for SNR_dB in SNR_dB_set:
 
@@ -400,6 +400,7 @@ plt.ylim()
 plt.semilogy(SNR_dB_set, ber_zf, color="red")
 plt.semilogy(SNR_dB_set, ber_mmse, color="green")
 plt.legend(labels=["zf", "mmse"], fontsize=8)
+plt.grid(True)
 
 plt.subplot(1, 2, 2)
 plt.title("", fontsize=12)
@@ -410,6 +411,9 @@ plt.ylim()
 plt.semilogy(SNR_dB_set, evm_zf, color="red")
 plt.semilogy(SNR_dB_set, evm_mmse, color="green")
 plt.legend(labels=["zf", "mmse"], fontsize=8)
+plt.grid(True)
+
+plt.savefig('MIMO_OFDM')
 
 plt.tight_layout()
 plt.show()

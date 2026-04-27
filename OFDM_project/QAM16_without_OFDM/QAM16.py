@@ -109,12 +109,14 @@ plt.scatter(np.real(y_zf), np.imag(y_zf), s=1, color='blue')
 plt.scatter(np.real(y_mmse), np.imag(y_mmse), s=1, color='green')
 plt.scatter(np.real(qam.x), np.imag(qam.x), color='red', s=20)
 plt.legend(labels=['ZF', 'MMSE'], fontsize=8)
-
 plt.tight_layout()
+
+plt.savefig('QAM16_constellation')
+
 plt.show()
 
 
-SNR_dB_set = np.arange(-20, 6, 0.2)
+SNR_dB_set = np.arange(-20, 6, 2)
 
 ber_zf, evm_zf = [], []
 ber_mmse, evm_mmse = [], []
@@ -156,6 +158,7 @@ plt.ylim()
 plt.semilogy(SNR_dB_set, ber_zf, color='red')
 plt.semilogy(SNR_dB_set, ber_mmse, color='green')
 plt.legend(labels=['zf', 'mmse'], fontsize=8)
+plt.grid(True)
 
 plt.subplot(1, 2, 2)
 plt.title('', fontsize=12)
@@ -166,6 +169,10 @@ plt.ylim()
 plt.semilogy(SNR_dB_set, evm_zf, color='red')
 plt.semilogy(SNR_dB_set, evm_mmse, color='green')
 plt.legend(labels=['zf', 'mmse'], fontsize=8)
+plt.grid(True)
 
 plt.tight_layout()
+
+plt.savefig('QAM16_metrics')
+
 plt.show()

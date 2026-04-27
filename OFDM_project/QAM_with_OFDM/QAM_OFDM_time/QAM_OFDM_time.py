@@ -189,7 +189,12 @@ plt.ylabel("s(t)", fontsize=12)
 plt.plot(Tds * 10**3, np.array(s), color="red")
 # plt.plot(Tds * 10**3, np.array(sn), color="black")
 plt.legend(labels=["в начале канала без шума", "на приеме с шумом"])
+
+plt.savefig('time_domain_signal')
+
 plt.show()
+
+
 
 
 plt.figure(figsize=(10, 6))
