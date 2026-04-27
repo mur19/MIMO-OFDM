@@ -35,7 +35,7 @@ def qr_householder_complex(A):
     R = A.astype(np.complex128).copy()
     Q = np.eye(m, dtype=np.complex128)
     
-    for i in range(0, n - 1):
+    for i in range(0, min(m, n)):
 
         if R[i:, i][0] != 0:
             alpha = -(R[i:, i][0])/(np.abs(R[i:, i][0]))*np.linalg.norm(R[i:, i], 2)
@@ -61,11 +61,13 @@ def qr_householder_complex(A):
     return Q, R
 
 
-A1 = np.array([[1+1j, -1, 0],
-               [1, 0, 0],
-               [0, 0, 1]]) @ np.array([[1, 1, 1],
-                                       [0, 1, 1],
-                                       [0, 0, -1]]) # Q @ R 
+A1 = np.array([[1+1j, -1, 0, 0],
+               [1, 0, 0, 0],
+               [0, 0, 1, 0],
+               [0, 1, 0, 1]]) @ np.array([[1, 1],
+                                       [0, 1],
+                                       [0, 0],
+                                       [0, 0]]) # Q @ R 
 
 print(f'A1 = {A1}')
 

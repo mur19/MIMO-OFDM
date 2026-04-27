@@ -200,5 +200,8 @@ plt.semilogy(SNR_dB, evm_mmse, color='green')
 plt.legend(labels=['zf', 'mmse'], fontsize=8)
 
 plt.tight_layout()
+
+plt.savefig('ber_evm_zf_mmse')
+
 plt.show()
 

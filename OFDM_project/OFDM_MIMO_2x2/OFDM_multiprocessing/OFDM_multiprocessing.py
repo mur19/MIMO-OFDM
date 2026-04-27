@@ -1,6 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import commpy as cp
+import time
+import concurrent.futures
 
 from commpy.channelcoding import Trellis, conv_encode, viterbi_decode
 
@@ -22,6 +24,8 @@ class QAMmodulation:
         self.num_symbols = subcarriers * OFDM_symbols * 2
         self.num_bits = int(self.num_symbols * np.log2(M))
         self.QAM_signal = None
+        self.num_err_min = 100
+        self.recursion_limit = 700
 
 
     def qr_householder(self, A):
@@ -30,7 +34,7 @@ class QAMmodulation:
         R = A.astype(np.complex128).copy()
         Q = np.eye(m, dtype=np.complex128)
         
-        for i in range(0, n - 1):
+        for i in range(0, min(m, n)):
 
             if R[i:, i][0] != 0:
                 alpha = -(R[i:, i][0])/(np.abs(R[i:, i][0]))*np.linalg.norm(R[i:, i], 2)
@@ -513,13 +517,11 @@ class QAMmodulation:
         
         key, equalized_signal = listt
 
-        num_err_min = 50
-
-        while num_err <= num_err_min:
+        while num_err <= self.num_err_min:
 
             count += 1
 
-            if count >= 500:
+            if count >= self.recursion_limit:
                 break
             
             # equalized_signal = equalized_signal.reshape(-1)
@@ -571,7 +573,7 @@ class QAMmodulation:
 
             num_bits += self.num_bits
 
-            if num_err <= num_err_min:
+            if num_err <= self.num_err_min:
 
                 H, Y_OFDM = self.start()
 
@@ -600,19 +602,19 @@ class QAMmodulation:
 
                 if key == 'zf':
                     num_err, num_bits = self.BER_new(list(data.items())[0], H, num_err=num_err, num_bits=num_bits, count=count, type_demod=type_demod)
-                    if num_err > num_err_min:
+                    if num_err > self.num_err_min:
                         return num_err, num_bits
                 elif key == 'mmse_classic':
                     num_err, num_bits = self.BER_new(list(data.items())[1], H, num_err=num_err, num_bits=num_bits, count=count, type_demod=type_demod)
-                    if num_err > num_err_min:
+                    if num_err > self.num_err_min:
                         return num_err, num_bits
                 elif key == 'mmse_householder':
                     num_err, num_bits = self.BER_new(list(data.items())[2], H, num_err=num_err, num_bits=num_bits, count=count, type_demod=type_demod)
-                    if num_err > num_err_min:
+                    if num_err > self.num_err_min:
                         return num_err, num_bits
                 elif key == 'ml':
                     num_err, num_bits = self.BER_new(list(data.items())[3], H, num_err=num_err, num_bits=num_bits, count=count, type_demod=type_demod)
-                    if num_err > num_err_min:
+                    if num_err > self.num_err_min:
                         return num_err, num_bits
                     
         # print(f'количество ошибок для {key}, code = {self.flag_code}: {num_err}')
@@ -625,7 +627,7 @@ class QAMmodulation:
         return np.mean(np.abs(self.x - equalized_signal) ** 2) # np.sum(np.abs(self.x - equalized_signal) ** 2) / len(self.x)
     
     def del_pilots(self, r):
-        for i in range(qam.OFDM_symbols):
+        for i in range(self.OFDM_symbols):
             r = np.delete(r, i + 1, axis=0)
         return r
     
@@ -662,7 +664,7 @@ class QAMmodulation:
 
         X_OFDM_pilots = self.add_pilots(X_OFDM)
 
-        x_t_pilots = self.idft(X_OFDM_pilots) * np.sqrt(qam.subcarriers)
+        x_t_pilots = self.idft(X_OFDM_pilots) * np.sqrt(self.subcarriers)
         # x_t = self.del_pilots(x_t_pilots)
 
         x_t_vector_pilots = x_t_pilots.reshape(-1)
@@ -706,13 +708,18 @@ class QAMmodulation:
 
         return H, Y_OFDM
 
-# SNR_set = [1, 5, 10, 13, 15, 17, 18]
 
-# for SNR in SNR_set:
-#     # zf с кодером soft
+
+
+
+def one_iteration(SNR_dB):
+
+    results = {}
+
+# # zf без кодера
 #     qam = QAMmodulation(
 #         M=16,
-#         SNR_dB=SNR,
+#         SNR_dB=SNR_dB,
 #         subcarriers=7,
 #         OFDM_symbols=20,
 #         flag_code=False
@@ -720,310 +727,236 @@ class QAMmodulation:
 
 #     H, Y_OFDM = qam.start()
 
-#     y_zf = []
+#     y_zf = qam.zf_equalize(H, Y_OFDM)
 #     y_mmse_classic = []
-#     y_mmse_householder = qam.mmse_equalize(H, Y_OFDM, mmse_solver='householder')
-#     y_ml = []
 
-#     data = {'zf': y_zf, 'mmse_classic': y_mmse_classic, 'mmse_householder': y_mmse_householder, 'ml': Y_OFDM}
+#     data = {'zf': y_zf, 'mmse': y_mmse_classic}
 
-#     num_err_mmse_householder, num_bits_mmse_householder = qam.BER_new(list(data.items())[2], H, num_err=0, num_bits=0, count=0, type_demod='hard')
-#     #num_err_mmse_classic, num_bits_mmse_classic = qam.BER_new(list(data.items())[1], H, num_err=0, num_bits=0, count=0, type_demod='soft')
+#     num_err_zf, num_bits_zf = qam.BER_new(list(data.items())[0],
+#                                             H, 
+#                                             num_err=0, 
+#                                             num_bits=0, 
+#                                             count=0, 
+#                                             type_demod='hard')
+#     print(f'zf без кодера: num_err = {num_err_zf}, num_bits = {num_bits_zf}')
+
+#     results['ber_zf'] = num_err_zf / num_bits_zf
+
+# # zf с кодером
+#     qam = QAMmodulation(
+#         M=16,
+#         SNR_dB=SNR_dB,
+#         subcarriers=7,
+#         OFDM_symbols=20,
+#         flag_code=True
+#     )
+
+#     H, Y_OFDM = qam.start()
+
+#     y_zf = qam.zf_equalize(H, Y_OFDM)
+#     y_mmse = []
+
+#     data = {'zf': y_zf, 'mmse': y_mmse}
+
+#     num_err_zf, num_bits_zf = qam.BER_new(list(data.items())[0], 
+#                                             H,
+#                                             num_err=0, 
+#                                             num_bits=0, 
+#                                             count=0, 
+#                                             type_demod='hard')
+#     print(f'zf с кодером: num_err = {num_err_zf}, num_bits = {num_bits_zf}')
+
+#     results['ber_zf_with_code'] = num_err_zf / num_bits_zf
     
-#     print(f'ml с кодером soft: num_err = {num_err_mmse_householder}, num_bits = {num_bits_mmse_householder}')
-    
-#     #err_mmse_classic = num_err_mmse_classic / num_bits_mmse_classic
-#     err_mmse_householder = num_err_mmse_householder / num_bits_mmse_householder
-    
-#     #print(f'with SNR = {SNR} dB BER_mmse_classic = {round(err_mmse_classic, 4)}')
-#     print(f'with SNR = {SNR} dB BER_mmse_householder = {round(err_mmse_householder, 4)}')
-# pass
+# # zf с кодером soft
+#     qam = QAMmodulation(
+#         M=16,
+#         SNR_dB=SNR_dB,
+#         subcarriers=7,
+#         OFDM_symbols=20,
+#         flag_code=True
+#     )
+
+#     H, Y_OFDM = qam.start()
+
+#     y_zf = qam.zf_equalize(H, Y_OFDM)
+#     y_mmse = []
+
+#     data = {'zf': y_zf, 'mmse': y_mmse}
+
+#     num_err_zf, num_bits_zf = qam.BER_new(list(data.items())[0], 
+#                                             H,
+#                                             num_err=0, 
+#                                             num_bits=0, 
+#                                             count=0, 
+#                                             type_demod='soft')
+#     print(f'zf с кодером soft: num_err = {num_err_zf}, num_bits = {num_bits_zf}')
+
+#     results['ber_zf_with_code_soft'] = num_err_zf / num_bits_zf
+
+# mmse без кодера classic
+    qam = QAMmodulation(
+        M=16,
+        SNR_dB=SNR_dB,
+        subcarriers=7,
+        OFDM_symbols=20,
+        flag_code=False
+    )
+
+    H, Y_OFDM = qam.start()
+
+    y_zf = qam.zf_equalize(H, Y_OFDM)
+    y_mmse_classic = qam.mmse_equalize(H, Y_OFDM, mmse_solver='classic')
+    y_mmse_householder = qam.mmse_equalize(H, Y_OFDM, mmse_solver='householder')
+
+    # results['evm_zf'] = qam.EVM(y_zf)
+    results['evm_mmse_classic'] = qam.EVM(y_mmse_classic)
+    results['evm_mmse_householder'] = qam.EVM(y_mmse_householder)
+
+    data = {'zf': y_zf, 'mmse_classic': y_mmse_classic}
 
 
-# plt.figure(figsize=(10, 6))
+    num_err_mmse, num_bits_mmse = qam.BER_new(list(data.items())[1], 
+                                                H,
+                                                num_err=0, 
+                                                num_bits=0, 
+                                                count=0, 
+                                                type_demod='hard')
+    print(f'mmse без кодера classic: num_err = {num_err_mmse}, num_bits = {num_bits_mmse}')
 
-# plt.subplot(1, 3, 1)
-# plt.title(f"Modulated signal (QAM{qam.M}), {qam.num_symbols}symbols")
-# plt.xlim(-2 * max(np.abs(qam.x)), 2 * max(np.abs(qam.x)))
-# plt.ylim(-2 * max(np.abs(qam.x)), 2 * max(np.abs(qam.x)))
-# plt.xlabel("I", fontsize=12)
-# plt.ylabel("Q", fontsize=12)
-# plt.scatter(np.real(qam.x), np.imag(qam.x), color="red")
-
-# plt.subplot(1, 3, 2)
-# plt.title(f"Signal after channel with AWGN (SNR={qam.SNR_dB} dB)", fontsize=12)
-# plt.xlabel("I", fontsize=12)
-# plt.ylabel("Q", fontsize=12)
-# plt.xlim(-2 * max(np.abs(qam.x)), 2 * max(np.abs(qam.x)))
-# plt.ylim(-2 * max(np.abs(qam.x_1)), 2 * max(np.abs(qam.x)))
-# plt.scatter(np.real(Y_OFDM), np.imag(Y_OFDM), color="black", s=0.5)
-# plt.scatter(np.real(qam.x), np.imag(qam.x), color="red", s=20)
-
-# plt.subplot(1, 3, 3)
-# plt.title("Equalized signal", fontsize=12)
-# plt.xlabel("I", fontsize=12)
-# plt.ylabel("Q", fontsize=12)
-# plt.xlim(-2 * max(np.abs(qam.x_1)), 2 * max(np.abs(qam.x_1)))
-# plt.ylim(-2 * max(np.abs(qam.x_1)), 2 * max(np.abs(qam.x_1)))
-# plt.scatter(np.real(y_zf), np.imag(y_zf), s=0.5, color="blue")
-# plt.scatter(np.real(y_mmse), np.imag(y_mmse), s=0.5, color="green")
-# plt.scatter(np.real(qam.x), np.imag(qam.x), color="red", s=20)
-# plt.legend(labels=["ZF", "MMSE"], fontsize=10)
-
-# plt.tight_layout()
-# plt.show()
+    results['ber_mmse_classic'] = num_err_mmse / num_bits_mmse
 
 
-SNR_dB_set = np.arange(0, 21, 5)
+# mmse с кодером classic
+    qam = QAMmodulation(
+        M=16,
+        SNR_dB=SNR_dB,
+        subcarriers=7,
+        OFDM_symbols=20,
+        flag_code=True
+    )
 
-ber_zf, ber_zf_code, ber_zf_code_soft, evm_zf = [], [], [], []
-ber_mmse_classic, ber_mmse_code_classic, ber_mmse_code_soft_classic, evm_mmse_classic = [], [], [], []
-ber_mmse_householder, ber_mmse_code_householder, ber_mmse_code_soft_householder, evm_mmse_householder = [], [], [], []
-ber_ml, ber_ml_code, ber_ml_soft, ber_ml_code_soft = [], [], [], []
+    H, Y_OFDM = qam.start()
 
-N_avg = 3
+    y_zf = []
+    y_mmse_classic = qam.mmse_equalize(H, Y_OFDM, mmse_solver='classic')
 
-for SNR_dB in SNR_dB_set:
+    data = {'zf': y_zf, 'mmse_classic': y_mmse_classic}
 
-    BER_zf_list, BER_zf_list_code, BER_zf_list_code_soft, EVM_zf_list = [], [], [], []
-    BER_mmse_list_classic, BER_mmse_list_code_classic, BER_mmse_list_soft_classic, BER_mmse_list_code_soft_classic, EVM_mmse_list_classic = [], [], [], [], []
-    BER_mmse_list_householder, BER_mmse_list_code_householder, BER_mmse_list_soft_householder, BER_mmse_list_code_soft_householder, EVM_mmse_list_householder = [], [], [], [], []
-    BER_ml_list, BER_ml_list_code, BER_ml_list_soft, BER_ml_list_code_soft = [], [], [], []
-
-    print(f'считается SNR = {SNR_dB} dB')
-
-    for _ in range(N_avg):
-
-# zf без кодера
-        qam = QAMmodulation(
-            M=16,
-            SNR_dB=SNR_dB,
-            subcarriers=7,
-            OFDM_symbols=20,
-            flag_code=False
-        )
-
-        H, Y_OFDM = qam.start()
-
-        y_zf = qam.zf_equalize(H, Y_OFDM)
-        y_mmse_classic = []
-
-        data = {'zf': y_zf, 'mmse': y_mmse_classic}
-
-        num_err_zf, num_bits_zf = qam.BER_new(list(data.items())[0],
+    num_err_mmse, num_bits_mmse = qam.BER_new(list(data.items())[1], 
                                                 H, 
                                                 num_err=0, 
                                                 num_bits=0, 
                                                 count=0, 
                                                 type_demod='hard')
-        print(f'zf без кодера: num_err = {num_err_zf}, num_bits = {num_bits_zf}')
-        BER_zf_list.append(num_err_zf / num_bits_zf)
+    print(f'mmse с кодером classic: num_err = {num_err_mmse}, num_bits = {num_bits_mmse}')
 
-# zf с кодером
-        qam = QAMmodulation(
-            M=16,
-            SNR_dB=SNR_dB,
-            subcarriers=7,
-            OFDM_symbols=20,
-            flag_code=True
-        )
+    results['ber_mmse_with_code_classic'] = num_err_mmse / num_bits_mmse
 
-        H, Y_OFDM = qam.start()
+# mmse с кодером soft classic
+    qam = QAMmodulation(
+        M=16,
+        SNR_dB=SNR_dB,
+        subcarriers=7,
+        OFDM_symbols=20,
+        flag_code=True
+    )
 
-        y_zf = qam.zf_equalize(H, Y_OFDM)
-        y_mmse = []
+    H, Y_OFDM = qam.start()
 
-        data = {'zf': y_zf, 'mmse': y_mmse}
+    y_zf = []
+    y_mmse_classic = qam.mmse_equalize(H, Y_OFDM, mmse_solver='classic')
 
-        num_err_zf, num_bits_zf = qam.BER_new(list(data.items())[0], 
+    data = {'zf': y_zf, 'mmse_classic': y_mmse_classic}
+
+    num_err_mmse, num_bits_mmse = qam.BER_new(list(data.items())[1], 
+                                                H, 
+                                                num_err=0, 
+                                                num_bits=0, 
+                                                count=0, 
+                                                type_demod='soft')
+    print(f'mmse с кодером soft classic: num_err = {num_err_mmse}, num_bits = {num_bits_mmse}')
+
+    results['ber_mmse_with_code_soft_classic'] = num_err_mmse / num_bits_mmse
+
+
+# mmse без кодера householder
+    qam = QAMmodulation(
+        M=16,
+        SNR_dB=SNR_dB,
+        subcarriers=7,
+        OFDM_symbols=20,
+        flag_code=False
+    )
+
+    H, Y_OFDM = qam.start()
+
+    y_zf = qam.zf_equalize(H, Y_OFDM)
+    y_mmse_householder = qam.mmse_equalize(H, Y_OFDM, mmse_solver='householder')
+
+    data = {'zf': y_zf, 'mmse_householder': y_mmse_householder}
+
+    num_err_mmse, num_bits_mmse = qam.BER_new(list(data.items())[1], 
                                                 H,
                                                 num_err=0, 
                                                 num_bits=0, 
                                                 count=0, 
                                                 type_demod='hard')
-        print(f'zf с кодером: num_err = {num_err_zf}, num_bits = {num_bits_zf}')
-        BER_zf_list_code.append(num_err_zf / num_bits_zf)
+    print(f'mmse без кодера householder: num_err = {num_err_mmse}, num_bits = {num_bits_mmse}')
 
-# zf с кодером soft
-        qam = QAMmodulation(
-            M=16,
-            SNR_dB=SNR_dB,
-            subcarriers=7,
-            OFDM_symbols=20,
-            flag_code=True
-        )
+    results['ber_mmse_householder'] = num_err_mmse / num_bits_mmse
 
-        H, Y_OFDM = qam.start()
+# mmse с кодером householder
+    qam = QAMmodulation(
+        M=16,
+        SNR_dB=SNR_dB,
+        subcarriers=7,
+        OFDM_symbols=20,
+        flag_code=True
+    )
 
-        y_zf = qam.zf_equalize(H, Y_OFDM)
-        y_mmse = []
+    H, Y_OFDM = qam.start()
 
-        data = {'zf': y_zf, 'mmse': y_mmse}
+    y_zf = []
+    y_mmse_householder = qam.mmse_equalize(H, Y_OFDM, mmse_solver='householder')
 
-        num_err_zf, num_bits_zf = qam.BER_new(list(data.items())[0], 
-                                                H,
+    data = {'zf': y_zf, 'mmse_householder': y_mmse_householder}
+
+    num_err_mmse, num_bits_mmse = qam.BER_new(list(data.items())[1], 
+                                                H, 
+                                                num_err=0, 
+                                                num_bits=0, 
+                                                count=0, 
+                                                type_demod='hard')
+    print(f'mmse с кодером householder: num_err = {num_err_mmse}, num_bits = {num_bits_mmse}')
+
+    results['ber_mmse_with_code_householder'] = num_err_mmse / num_bits_mmse
+
+# mmse с кодером soft householder
+    qam = QAMmodulation(
+        M=16,
+        SNR_dB=SNR_dB,
+        subcarriers=7,
+        OFDM_symbols=20,
+        flag_code=True
+    )
+
+    H, Y_OFDM = qam.start()
+
+    y_zf = []
+    y_mmse_householder = qam.mmse_equalize(H, Y_OFDM, mmse_solver='householder')
+
+    data = {'zf': y_zf, 'mmse_householder': y_mmse_householder}
+
+    num_err_mmse, num_bits_mmse = qam.BER_new(list(data.items())[1], 
+                                                H, 
                                                 num_err=0, 
                                                 num_bits=0, 
                                                 count=0, 
                                                 type_demod='soft')
-        print(f'zf с кодером soft: num_err = {num_err_zf}, num_bits = {num_bits_zf}')
-        BER_zf_list_code_soft.append(num_err_zf / num_bits_zf)
+    print(f'mmse с кодером soft householder: num_err = {num_err_mmse}, num_bits = {num_bits_mmse}')
 
-# mmse без кодера classic
-        qam = QAMmodulation(
-            M=16,
-            SNR_dB=SNR_dB,
-            subcarriers=7,
-            OFDM_symbols=20,
-            flag_code=False
-        )
-
-        H, Y_OFDM = qam.start()
-
-        y_zf = qam.zf_equalize(H, Y_OFDM)
-        y_mmse_classic = qam.mmse_equalize(H, Y_OFDM, mmse_solver='classic')
-
-        data = {'zf': y_zf, 'mmse_classic': y_mmse_classic}
-
-        EVM_zf_list.append(qam.EVM(y_zf))
-        EVM_mmse_list_classic.append(qam.EVM(y_mmse_classic))
-
-        num_err_mmse, num_bits_mmse = qam.BER_new(list(data.items())[1], 
-                                                    H,
-                                                    num_err=0, 
-                                                    num_bits=0, 
-                                                    count=0, 
-                                                    type_demod='hard')
-        print(f'mmse без кодера classic: num_err = {num_err_mmse}, num_bits = {num_bits_mmse}')
-        BER_mmse_list_classic.append(num_err_mmse / num_bits_mmse)
-
-# mmse с кодером classic
-        qam = QAMmodulation(
-            M=16,
-            SNR_dB=SNR_dB,
-            subcarriers=7,
-            OFDM_symbols=20,
-            flag_code=True
-        )
-
-        H, Y_OFDM = qam.start()
-
-        y_zf = []
-        y_mmse_classic = qam.mmse_equalize(H, Y_OFDM, mmse_solver='classic')
-
-        data = {'zf': y_zf, 'mmse_classic': y_mmse_classic}
-
-        num_err_mmse, num_bits_mmse = qam.BER_new(list(data.items())[1], 
-                                                    H, 
-                                                    num_err=0, 
-                                                    num_bits=0, 
-                                                    count=0, 
-                                                    type_demod='hard')
-        print(f'mmse с кодером classic: num_err = {num_err_mmse}, num_bits = {num_bits_mmse}')
-        BER_mmse_list_code_classic.append(num_err_mmse / num_bits_mmse)
-
-# mmse с кодером soft classic
-        qam = QAMmodulation(
-            M=16,
-            SNR_dB=SNR_dB,
-            subcarriers=7,
-            OFDM_symbols=20,
-            flag_code=True
-        )
-
-        H, Y_OFDM = qam.start()
-
-        y_zf = []
-        y_mmse_classic = qam.mmse_equalize(H, Y_OFDM, mmse_solver='classic')
-
-        data = {'zf': y_zf, 'mmse_classic': y_mmse_classic}
-
-        num_err_mmse, num_bits_mmse = qam.BER_new(list(data.items())[1], 
-                                                    H, 
-                                                    num_err=0, 
-                                                    num_bits=0, 
-                                                    count=0, 
-                                                    type_demod='soft')
-        print(f'mmse с кодером soft classic: num_err = {num_err_mmse}, num_bits = {num_bits_mmse}')
-        BER_mmse_list_code_soft_classic.append(num_err_mmse / num_bits_mmse)
-
-
-# mmse без кодера householder
-        qam = QAMmodulation(
-            M=16,
-            SNR_dB=SNR_dB,
-            subcarriers=7,
-            OFDM_symbols=20,
-            flag_code=False
-        )
-
-        H, Y_OFDM = qam.start()
-
-        y_zf = qam.zf_equalize(H, Y_OFDM)
-        y_mmse_householder = qam.mmse_equalize(H, Y_OFDM, mmse_solver='householder')
-
-        data = {'zf': y_zf, 'mmse_householder': y_mmse_householder}
-
-        EVM_mmse_list_householder.append(qam.EVM(y_mmse_householder))
-
-        num_err_mmse, num_bits_mmse = qam.BER_new(list(data.items())[1], 
-                                                    H,
-                                                    num_err=0, 
-                                                    num_bits=0, 
-                                                    count=0, 
-                                                    type_demod='hard')
-        print(f'mmse без кодера householder: num_err = {num_err_mmse}, num_bits = {num_bits_mmse}')
-        BER_mmse_list_householder.append(num_err_mmse / num_bits_mmse)
-
-# mmse с кодером householder
-        qam = QAMmodulation(
-            M=16,
-            SNR_dB=SNR_dB,
-            subcarriers=7,
-            OFDM_symbols=20,
-            flag_code=True
-        )
-
-        H, Y_OFDM = qam.start()
-
-        y_zf = []
-        y_mmse_householder = qam.mmse_equalize(H, Y_OFDM, mmse_solver='householder')
-
-        data = {'zf': y_zf, 'mmse_householder': y_mmse_householder}
-
-        num_err_mmse, num_bits_mmse = qam.BER_new(list(data.items())[1], 
-                                                    H, 
-                                                    num_err=0, 
-                                                    num_bits=0, 
-                                                    count=0, 
-                                                    type_demod='hard')
-        print(f'mmse с кодером householder: num_err = {num_err_mmse}, num_bits = {num_bits_mmse}')
-        BER_mmse_list_code_householder.append(num_err_mmse / num_bits_mmse)
-
-# mmse с кодером soft householder
-        qam = QAMmodulation(
-            M=16,
-            SNR_dB=SNR_dB,
-            subcarriers=7,
-            OFDM_symbols=20,
-            flag_code=True
-        )
-
-        H, Y_OFDM = qam.start()
-
-        y_zf = []
-        y_mmse_householder = qam.mmse_equalize(H, Y_OFDM, mmse_solver='householder')
-
-        data = {'zf': y_zf, 'mmse_householder': y_mmse_householder}
-
-        num_err_mmse, num_bits_mmse = qam.BER_new(list(data.items())[1], 
-                                                    H, 
-                                                    num_err=0, 
-                                                    num_bits=0, 
-                                                    count=0, 
-                                                    type_demod='soft')
-        print(f'mmse с кодером soft householder: num_err = {num_err_mmse}, num_bits = {num_bits_mmse}')
-        BER_mmse_list_code_soft_householder.append(num_err_mmse / num_bits_mmse)
+    results['ber_mmse_with_code_soft_householder'] = num_err_mmse / num_bits_mmse
 
 
 # # ml без кодера
@@ -1104,115 +1037,139 @@ for SNR_dB in SNR_dB_set:
 #         print(f'ml с кодером soft: num_err = {num_err_ml}, num_bits = {num_bits_ml}')
 #         BER_ml_list_code_soft.append(num_err_ml / num_bits_ml)
 
+    return results
 
 
-    ber_zf.append(np.mean(np.array(BER_zf_list)))
-    ber_zf_code.append(np.mean(np.array(BER_zf_list_code)))
-    ber_zf_code_soft.append(np.mean(np.array(BER_zf_list_code_soft)))
+if __name__ == '__main__':
 
-    evm_zf.append(np.mean(np.array(EVM_zf_list)))
+    SNR_dB_set = np.arange(0, 21, 5)
+    N_avg = 5
+    MAX_WORKERS = 4 # Оптимально для ваших 6 ядер
+
+    # final_ber_zf = []
+    # final_ber_zf_code = []
+    # final_ber_zf_code_soft = []
+
+    final_ber_mmse_classic = []
+    final_ber_mmse_code_classic = []
+    final_ber_mmse_code_soft_classic = []
+
+    final_ber_mmse_householder = []
+    final_ber_mmse_code_householder = []
+    final_ber_mmse_code_soft_householder = []
+
+    final_evm_zf = []
+    final_evm_mmse_classic = []
+    final_evm_mmse_householder = []
+
+    start_time = time.perf_counter()
+
+    for snr_db in SNR_dB_set:
+        print(f"Запуск параллельного расчета для SNR = {snr_db} dB...")
+        
+        with concurrent.futures.ProcessPoolExecutor(max_workers=MAX_WORKERS) as executor:
+            # Распределяем N_avg задач между ядрами
+            # Передаем список из N_avg элементов, каждый из которых равен текущему snr
+            futures = [executor.submit(one_iteration, snr_db) for _ in range(N_avg)]
+            
+            # Собираем результаты по мере готовности
+            batch_results = []
+            for future in concurrent.futures.as_completed(futures):
+                batch_results.append(future.result())
+
+        # Усредняем результаты этого SNR
+
+        # final_ber_zf.append(np.mean([r['ber_zf'] for r in batch_results]))
+        # final_ber_zf_code.append(np.mean([r['ber_zf_with_code'] for r in batch_results]))
+        # final_ber_zf_code_soft.append(np.mean([r['ber_zf_with_code_soft'] for r in batch_results]))
+
+        final_ber_mmse_classic.append(np.mean([r['ber_mmse_classic'] for r in batch_results]))
+        final_ber_mmse_code_classic.append(np.mean([r['ber_mmse_with_code_classic'] for r in batch_results]))
+        final_ber_mmse_code_soft_classic.append(np.mean([r['ber_mmse_with_code_soft_classic'] for r in batch_results]))
+
+        final_ber_mmse_householder.append(np.mean([r['ber_mmse_householder'] for r in batch_results]))
+        final_ber_mmse_code_householder.append(np.mean([r['ber_mmse_with_code_householder'] for r in batch_results]))
+        final_ber_mmse_code_soft_householder.append(np.mean([r['ber_mmse_with_code_soft_householder'] for r in batch_results]))
+
+        # final_evm_zf.append(np.mean([r['evm_zf'] for r in batch_results]))
+        final_evm_mmse_classic.append(np.mean([r['evm_mmse_classic'] for r in batch_results]))
+        final_evm_mmse_householder.append(np.mean([r['evm_mmse_householder'] for r in batch_results]))
 
 
+    end_time = time.perf_counter()
 
-    ber_mmse_classic.append(np.mean(np.array(BER_mmse_list_classic)))
-    ber_mmse_code_classic.append(np.mean(np.array(BER_mmse_list_code_classic)))
-    ber_mmse_code_soft_classic.append(np.mean(np.array(BER_mmse_list_code_soft_classic)))
-
-    evm_mmse_classic.append(np.mean(np.array(EVM_mmse_list_classic)))
+    print(f'время выполнения: {round(end_time - start_time, 2)} секунд = {round((end_time - start_time) / 60, 2)} минут = {round((end_time - start_time) / 3600, 2)} часов')
 
 
-
-    ber_mmse_householder.append(np.mean(np.array(BER_mmse_list_householder)))
-    ber_mmse_code_householder.append(np.mean(np.array(BER_mmse_list_code_householder)))
-    ber_mmse_code_soft_householder.append(np.mean(np.array(BER_mmse_list_code_soft_householder)))
-
-    evm_mmse_householder.append(np.mean(np.array(EVM_mmse_list_householder)))
+    qam = QAMmodulation(M=16, SNR_dB=0, subcarriers=7, OFDM_symbols=20, flag_code=True)
 
 
+    # plt.figure(figsize=(10, 6))
 
-    ber_ml.append(np.mean(np.array(BER_ml_list)))
-    ber_ml_code.append(np.mean(np.array(BER_ml_list_code)))
-    ber_ml_code_soft.append(np.mean(np.array(BER_ml_list_code_soft)))
+    # plt.suptitle(f'реализаций: {N_avg}, ошибок: {qam.num_err_min}, глубина рекурсии: {qam.recursion_limit}')
 
-ber_zf = np.array(ber_zf)
-ber_zf_code = np.array(ber_zf_code)
-ber_zf_code_soft = np.array(ber_zf_code_soft)
-evm_zf = np.array(evm_zf)
+    # # BER:
 
-ber_mmse_classic = np.array(ber_mmse_classic)
-ber_mmse_code_classic = np.array(ber_mmse_code_classic)
-ber_mmse_code_soft_classic = np.array(ber_mmse_code_soft_classic)
-evm_mmse_classic = np.array(evm_mmse_classic)
+    # # ZF
+    # plt.xlabel("SNR_dB", fontsize=12)
+    # plt.ylabel("BER", fontsize=12)
+    # plt.xlim()
+    # plt.ylim()
+    # plt.semilogy(SNR_dB_set, final_ber_zf, color="red", label="zf")
+    # plt.semilogy(SNR_dB_set, final_ber_zf_code, color="red", linestyle='--', label="zf_code")
+    # plt.semilogy(SNR_dB_set, final_ber_zf_code_soft, color="red", linestyle='-.', label="zf_code_soft")
+    # plt.legend(loc='upper right', fontsize=8)
 
-ber_mmse_householder = np.array(ber_mmse_householder)
-ber_mmse_code_householder = np.array(ber_mmse_code_householder)
-ber_mmse_code_soft_householder = np.array(ber_mmse_code_soft_householder)
-evm_mmse_householder = np.array(evm_mmse_householder)
+    # plt.savefig('ber_zf_multiprocessing')
 
-
-ber_ml = np.array(ber_ml)
-ber_ml_code = np.array(ber_ml_code)
-ber_ml_code_soft = np.array(ber_ml_code_soft)
+    # plt.tight_layout()
 
 
-plt.figure(figsize=(10, 6))
+    plt.figure(figsize=(10, 6))
 
-plt.suptitle(f'реализаций: {N_avg}')
+    plt.suptitle(f'реализаций: {N_avg}, ошибок: {qam.num_err_min}, глубина рекурсии: {qam.recursion_limit}')
 
-# BER:
+    # MMSE
+    plt.subplot(1, 2, 1)
+    plt.xlabel("SNR_dB", fontsize=12)
+    plt.ylabel("BER", fontsize=12)
+    plt.xlim()
+    plt.ylim()
+    # classic
+    plt.semilogy(SNR_dB_set, final_ber_mmse_classic, color="green", label="mmse_classic")
+    plt.semilogy(SNR_dB_set, final_ber_mmse_code_classic, color="green", linestyle='--', label="mmse_code_classic")
+    plt.semilogy(SNR_dB_set, final_ber_mmse_code_soft_classic, color="green", linestyle=':', label="mmse_code_soft_classic")
+    # householder
+    plt.semilogy(SNR_dB_set, final_ber_mmse_householder, color="black", label="mmse_householder")
+    plt.semilogy(SNR_dB_set, final_ber_mmse_code_householder, color="black", linestyle='--', label="mmse_code_householder")
+    plt.semilogy(SNR_dB_set, final_ber_mmse_code_soft_householder, color="black", linestyle=':', label="mmse_code_soft_householder")
 
-# ZF
-plt.subplot(2, 2, 1)
-plt.xlabel("SNR_dB", fontsize=12)
-plt.ylabel("BER", fontsize=12)
-plt.xlim()
-plt.ylim()
-plt.semilogy(SNR_dB_set, ber_zf, color="red", label="zf")
-plt.semilogy(SNR_dB_set, ber_zf_code, color="red", linestyle='--', label="zf_code")
-plt.semilogy(SNR_dB_set, ber_zf_code_soft, color="red", linestyle='-.', label="zf_code_soft")
-plt.legend(loc='upper right', fontsize=8)
+    plt.legend(loc='lower left', fontsize=8)
 
-# MMSE
-plt.subplot(2, 2, 2)
-plt.xlabel("SNR_dB", fontsize=12)
-plt.ylabel("BER", fontsize=12)
-plt.xlim()
-plt.ylim()
-# classic
-plt.semilogy(SNR_dB_set, ber_mmse_classic, color="green", label="mmse_classic")
-plt.semilogy(SNR_dB_set, ber_mmse_code_classic, color="green", linestyle='--', label="mmse_code_classic")
-plt.semilogy(SNR_dB_set, ber_mmse_code_soft_classic, color="green", linestyle=':', label="mmse_code_soft_classic")
-# householder
-plt.semilogy(SNR_dB_set, ber_mmse_householder, color="black", label="mmse_householder")
-plt.semilogy(SNR_dB_set, ber_mmse_code_householder, color="black", linestyle='--', label="mmse_code_householder")
-plt.semilogy(SNR_dB_set, ber_mmse_code_soft_householder, color="black", linestyle=':', label="mmse_code_soft_householder")
+    # ML
+    # plt.subplot(1, 3, 2)
+    # plt.xlabel("SNR_dB", fontsize=12)
+    # plt.ylabel("BER", fontsize=12)
+    # plt.xlim()
+    # plt.ylim()
+    # plt.semilogy(SNR_dB_set, final_ber_ml, color="magenta", label="ml")
+    # plt.semilogy(SNR_dB_set, final_ber_ml_code, color="magenta", linestyle='--', label="ml_code")
+    # plt.semilogy(SNR_dB_set, final_ber_ml_code_soft, color="magenta", linestyle='-.', label="ml_code_soft")
+    # plt.legend(loc='upper right', fontsize=8)
 
-plt.legend(loc='lower left', fontsize=8)
+    # EVM:
+    plt.subplot(1, 2, 2)
+    plt.xlabel("SNR_dB", fontsize=12)
+    plt.ylabel("|EVM_classic - EVM_householder|", fontsize=12)
+    plt.xlim()
+    plt.ylim()
+    # plt.semilogy(SNR_dB_set, final_evm_zf, color="red", label="zf")
+    plt.plot(SNR_dB_set, np.abs(np.array(final_evm_mmse_classic) - np.array(final_evm_mmse_householder)), color="green", label="|EVM_classic - EVM_householder|")
+    # plt.semilogy(SNR_dB_set, final_evm_mmse_householder, color="green", linestyle=':', label="mmse_householder")
+    plt.legend(loc='upper right', fontsize=8)
 
-# ML
-plt.subplot(2, 2, 3)
-plt.xlabel("SNR_dB", fontsize=12)
-plt.ylabel("BER", fontsize=12)
-plt.xlim()
-plt.ylim()
-plt.semilogy(SNR_dB_set, ber_ml, color="magenta", label="ml")
-plt.semilogy(SNR_dB_set, ber_ml_code, color="magenta", linestyle='--', label="ml_code")
-plt.semilogy(SNR_dB_set, ber_ml_code_soft, color="magenta", linestyle='-.', label="ml_code_soft")
-plt.legend(loc='upper right', fontsize=8)
+    plt.tight_layout()
 
-# EVM:
-plt.subplot(2, 2, 4)
-plt.xlabel("SNR_dB", fontsize=12)
-plt.ylabel("EVM", fontsize=12)
-plt.xlim()
-plt.ylim()
-plt.semilogy(SNR_dB_set, evm_zf, color="red", label="zf")
-plt.semilogy(SNR_dB_set, evm_mmse_classic, color="green", label="mmse_classic")
-plt.semilogy(SNR_dB_set, evm_mmse_householder, color="green", linestyle=':', label="mmse_householder")
-plt.legend(loc='upper right', fontsize=8)
+    plt.savefig('ber_mmse_and_evm_multiprocessing')
 
-plt.tight_layout()
-
-plt.savefig('evm_classic')
-
-plt.show()
+    plt.show()
