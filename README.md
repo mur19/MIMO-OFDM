@@ -79,7 +79,7 @@ $$
 
  #### Метод преобразований Хаусхолдера
 
-подробнее про метод и его применение к MMSE описал [здесь](https://www.overleaf.com/read/tzmffpbrjfcc#282156)
+подробнее про метод и его применение к MMSE описал [здесь](./OFDM_project/Householder/MMSE_QR_Householder.pdf)
 
 
 
