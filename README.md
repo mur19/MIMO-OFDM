@@ -25,4 +25,4 @@ OFDM_project
 2. **Householder** - QR-разложение матрицы $A \in \mathbb{C}^{m \times n}$
 3. **OFDM_MIMO_2x2** - переход к от SISO к MIMO 2x2
 4. **QAM16_without_OFDM** - реализация QAM16 модуляции и расчет характеристик BER и EVM для ZF и MMSE эквализаций
-5. **QAM_with_OFDM** - реализация QAM16 модуляции и расчет характеристик BER и EVM для ZF и MMSE эквализаций
+5. **QAM_with_OFDM** - реализация QAM16 модуляции и расчет характеристик BER и EVM для ZF и MMSE эквализаций с OFDM
